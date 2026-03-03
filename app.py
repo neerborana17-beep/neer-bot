@@ -1,133 +1,106 @@
+import streamlit as st
 import requests
 import json
-import time
-import sys
-import threading
 import os
-import random
-from datetime import datetime
 
-# 1. अपनी OpenRouter API Key यहाँ डालें
+# --- 1. API Key (Secrets se uthayenge) ---
 API_KEY = st.secrets["OPENROUTER_API_KEY"]
-MEMORY_FILE = "neer_memory.json"
 
-# --- UI Header Section (Clean White & Bold) ---
-def print_header():
-    # Screen clear karo
-    os.system('cls' if os.name == 'nt' else 'clear')
+# --- 2. Page Config & CSS (UI Look) ---
+st.set_page_config(page_title="Neer AI", page_icon="💬")
+
+st.markdown("""
+    <style>
+    /* Header को टॉप पर फिक्स करने के लिए */
+    [data-testid="stVerticalBlock"] > div:first-child {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: #0b141a; /* WhatsApp dark color */
+        z-index: 1000;
+        padding: 10px 20px;
+        border-bottom: 1px solid #202c33;
+    }
+
+    /* चैट कंटेंट को हेडर के नीचे से शुरू करने के लिए मार्जिन */
+    .stMain {
+        margin-top: 80px;
+    }
+
+    .header-container { 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+    }
     
-    # Neer: Bold White | Online: Green
-    # \033[1;37m se Bright White Bold hota hai
-    name_style = """
- \033[1;37mN E E R\033[0m
- \033[32monline\033[0m
-    """
-    print(name_style)
-    print("-" * 20)
-    print("")
+    .profile-pic { 
+        width: 45px; 
+        height: 45px; 
+        border-radius: 50%; 
+        border: 2px solid #00a884; 
+        object-fit: cover; 
+    }
 
-# --------------------------
+    .neer-name { 
+        color: white; 
+        font-size: 20px; 
+        font-weight: bold; 
+        margin: 0; 
+    }
 
-def load_memory():
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(MEMORY_FILE, "r") as f:
-                return json.load(f)
-        except: pass
-    return [{
-        "role": "system", 
-        "content": "Tera naam Neer hai. Tu ek smart friend hai jo 'Mood Tracker' use karta hai. Important baatein yaad rakh. Hinglish use kar, short reh aur chill vibes de."
-    }]
+    .online-status { 
+        color: #00a884; 
+        font-size: 12px; 
+        margin: 0; 
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-def save_memory(messages):
-    important_messages = [messages[0]]
-    for msg in messages[1:]:
-        if len(msg['content']) > 10 or msg['role'] == 'assistant':
-            important_messages.append(msg)
-    
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(important_messages[-15:], f)
 
-messages = load_memory()
-last_message_time = time.time()
-stop_threads = False
-stop_typing = True
-
-def typing_animation():
-    chars = [".  ", ".. ", "...", "   "]
-    i = 0
-    while not stop_typing:
-        sys.stdout.write(f"\rtyping{chars[i % 4]}\033[K")
-        sys.stdout.flush()
-        time.sleep(0.4)
-        i += 1
-    sys.stdout.write("\r\033[K")
-    sys.stdout.flush()
-
-def get_neer_response(user_input, is_proactive=False):
-    global stop_typing
-    now = datetime.now()
-    ctx = f"(Time {now.strftime('%I:%M %p')}). "
-    
-    if is_proactive:
-        content = ctx + "Search for something specific or comment on user's recent mood. Be brief."
+# --- 3. Header Display ---
+col1, col2 = st.columns([1, 10])
+with col1:
+    # Agar image file hai toh wo dikhao, varna default icon
+    if os.path.exists("neer_dp.png"):
+        st.image("neer_dp.png", width=45)
     else:
-        content = ctx + f"User: {user_input}"
-        
-    messages.append({"role": "user", "content": content})
+        st.markdown("👤") 
 
-    stop_typing = False
-    t = threading.Thread(target=typing_animation)
-    t.start()
-    
-    try:
-        response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-            data=json.dumps({
-                "model": "google/gemini-2.0-flash-001", 
-                "messages": messages,
-                "max_tokens": 70,
-                "tools": [{"type": "web_search"}]
-            })
-        )
-        stop_typing = True
-        t.join()
-        
-        reply = response.json()['choices'][0]['message']['content']
-        messages.append({"role": "assistant", "content": reply})
-        save_memory(messages)
-        return reply
-    except:
-        stop_typing = True
-        return None
+with col2:
+    st.markdown('<p class="neer-name">N E E R</p><p class="online-status">online</p>', unsafe_allow_html=True)
 
-def proactive_loop():
-    global last_message_time, stop_threads
-    while not stop_threads:
-        time.sleep(30)
-        if time.time() - last_message_time > 150: 
-            jawab = get_neer_response("", is_proactive=True)
-            if jawab:
-                print(f"\nNeer: {jawab}")
-                print("You: ", end="", flush=True)
-                last_message_time = time.time()
+st.divider()
 
-# --- Main Program ---
-print_header()
+# --- 4. Chat Memory Logic ---
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "system", "content": "Tera naam Neer hai. Tu smart desi dost hai. Short aur realistic reh. Mood track kar."}]
 
-threading.Thread(target=proactive_loop, daemon=True).start()
+# Display Messages
+for msg in st.session_state.messages[1:]:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
 
-try:
-    while True:
-        user_puchha = input("\033[KYou: ")
-        last_message_time = time.time()
-        if not user_puchha.strip(): continue
-        if user_puchha.lower() in ["bye", "exit"]: break
-            
-        jawab = get_neer_response(user_puchha)
-        if jawab: print(f"\rNeer: {jawab}")
-except KeyboardInterrupt:
-    pass
-save_memory(messages)
+# --- 5. User Input & AI Response ---
+prompt = st.chat_input("Bolo bhai...")
+
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    with st.chat_message("assistant"):
+        with st.spinner("typing..."):
+            res = requests.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                data=json.dumps({
+                    "model": "google/gemini-2.0-flash-001", 
+                    "messages": st.session_state.messages,
+                    "tools": [{"type": "web_search"}]
+                })
+            )
+            reply = res.json()['choices'][0]['message']['content']
+            st.write(reply)
+            st.session_state.messages.append({"role": "assistant", "content": reply})
     
